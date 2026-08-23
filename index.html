@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Canine Smart Tag & Passport</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React & ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- Babel for JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useRef, useEffect } = React;
+
+    function App() {
+      // 1. Resolve Tag ID from URL parameter (e.g. ?tag=TAG-101)
+      const urlParams = new URLSearchParams(window.location.search);
+      const tagId = urlParams.get('tag') || "TAG-8921";
+      const storageKey = `dog_passport_${tagId}`;
+
+      const defaultDog = {
+        name: '',
+        breed: '',
+        color: '',
+        microchip: '',
+        medical: '',
+        ownerName: '',
+        ownerPhone: '',
+        reward: '$250',
+        lastSeen: 'Nearby neighborhood or park',
+        photo: 'https://images.unsplash.com/photo-1552053831-71594a27632d?auto=format&fit=crop&w=600&q=80'
+      };
+
+      // 2. Initialize State directly from localStorage
+      const [isRegistered, setIsRegistered] = useState(() => {
+        try {
+          const saved = localStorage.getItem(storageKey);
+          return saved ? JSON.parse(saved).isRegistered : false;
+        } catch {
+          return false;
+        }
+      });
+
+      const [isMissing, setIsMissing] = useState(() => {
+        try {
+          const saved = localStorage.getItem(storageKey);
+          return saved ? JSON.parse(saved).isMissing : false;
+        } catch {
+          return false;
+        }
+      });
+
+      const [dog, setDog] = useState(() => {
+        try {
+          const saved = localStorage.getItem(storageKey);
+          return saved ? JSON.parse(saved).dog : defaultDog;
+        } catch {
+          return defaultDog;
+        }
+      });
+
+      const [isEditing, setIsEditing] = useState(false);
+      const canvasRef = useRef(null);
+
+      // 3. Keep localStorage synced whenever state changes
+      const saveState = (updatedDog, updatedRegistered, updatedMissing) => {
+        const payload = {
+          dog: updatedDog,
+          isRegistered: updatedRegistered,
+          isMissing: updatedMissing
+        };
+        localStorage.setItem(storageKey, JSON.stringify(payload));
+      };
+
+      // Photo upload: Convert to Base64 so it can be saved in LocalStorage
+      const handlePhoto = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const updated = { ...dog, photo: reader.result };
+            setDog(updated);
+            if (isRegistered) {
+              saveState(updated, true, isMissing);
+            }
+          };
+          reader.readAsDataURL(file);
+        }
+      };
+
+      // Onboarding submission
+      const handleRegister = (e) => {
+        e.preventDefault();
+        setIsRegistered(true);
+        saveState(dog, true, isMissing);
+      };
+
+      // Toggle Lost Dog Status
+      const toggleMissing = () => {
+        const nextState = !isMissing;
+        setIsMissing(nextState);
+        saveState(dog, isRegistered, nextState);
+      };
+
+      // Profile edit save
+      const handleProfileUpdate = (e) => {
+        e.preventDefault();
+        setIsEditing(false);
+        saveState(dog, true, isMissing);
+      };
+
+      // Reset Tag Data (Clear storage for testing)
+      const handleResetTag = () => {
+        if (confirm("Are you sure you want to reset this tag and clear all saved dog data?")) {
+          localStorage.removeItem(storageKey);
+          setDog(defaultDog);
+          setIsRegistered(false);
+          setIsMissing(false);
+          setIsEditing(false);
+        }
+      };
+
+      // Generate & Download Missing Poster
+      const generatePoster = () => {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        canvas.width = 1200;
+        canvas.height = 1600;
+
+        // Header Banner
+        ctx.fillStyle = '#DC2626';
+        ctx.fillRect(0, 0, 1200, 260);
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 96px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('LOST DOG', 600, 140);
+
+        ctx.font = 'bold 42px sans-serif';
+        ctx.fillText(`REWARD: ${dog.reward || 'GENEROUS'}`, 600, 220);
+
+        // Body Canvas
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 260, 1200, 1340);
+
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.src = dog.photo;
+        img.onload = () => {
+          ctx.drawImage(img, 150, 300, 900, 600);
+
+          ctx.fillStyle = '#111827';
+          ctx.font = 'bold 72px sans-serif';
+          ctx.fillText((dog.name || 'PET').toUpperCase(), 600, 980);
+
+          ctx.font = '36px sans-serif';
+          ctx.fillStyle = '#4B5563';
+          ctx.fillText(`${dog.breed || 'Unknown Breed'} • ${dog.color || 'Markings'}`, 600, 1040);
+
+          ctx.font = 'bold 32px sans-serif';
+          ctx.fillStyle = '#DC2626';
+          ctx.fillText(`LAST SEEN: ${dog.lastSeen}`, 600, 1100);
+
+          ctx.font = '28px sans-serif';
+          ctx.fillStyle = '#374151';
+          ctx.fillText(dog.medical || 'Friendly dog. Please call owner immediately.', 600, 1160);
+
+          // Footer
+          ctx.fillStyle = '#111827';
+          ctx.fillRect(100, 1240, 1000, 260);
+
+          ctx.fillStyle = '#FBBF24';
+          ctx.font = 'bold 36px sans-serif';
+          ctx.fillText('PLEASE CALL IMMEDIATELY IF SEEN:', 600, 1310);
+
+          ctx.fillStyle = '#FFFFFF';
+          ctx.font = 'bold 64px sans-serif';
+          ctx.fillText(dog.ownerPhone || 'No Phone Provided', 600, 1400);
+
+          ctx.font = '30px sans-serif';
+          ctx.fillText(`Owner: ${dog.ownerName}`, 600, 1460);
+
+          const link = document.createElement('a');
+          link.download = `${dog.name || 'LOST'}-POSTER.png`;
+          link.href = canvas.toDataURL('image/png');
+          link.click();
+        };
+      };
+
+      // -------------------------------------------------------------
+      // VIEW A: FIRST-TIME ONBOARDING / SETUP
+      // -------------------------------------------------------------
+      if (!isRegistered) {
+        return (
+          <div className="min-h-screen flex items-center justify-center p-4">
+            <div className="max-w-md w-full bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-2xl">
+              <div className="mb-4">
+                <span className="text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded">
+                  NEW SMART TAG DETECTED
+                </span>
+                <h2 className="text-xl font-bold text-white mt-2">Activate Pet Passport</h2>
+                <p className="text-xs text-slate-400 font-mono">Tag ID: {tagId}</p>
+              </div>
+              <p className="text-sm text-slate-300 mb-6">
+                Fill in your pet's information to link this NFC tag. All details persist permanently in storage.
+              </p>
+
+              <form onSubmit={handleRegister} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1">DOG PHOTO</label>
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    onChange={handlePhoto} 
+                    className="text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-amber-500 file:text-slate-950 hover:file:bg-amber-400 cursor-pointer" 
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1">DOG NAME *</label>
+                  <input 
+                    type="text" 
+                    value={dog.name} 
+                    onChange={(e) => setDog({ ...dog, name: e.target.value })} 
+                    placeholder="e.g. Barnaby"
+                    required 
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-amber-400" 
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">BREED</label>
+                    <input 
+                      type="text" 
+                      value={dog.breed} 
+                      onChange={(e) => setDog({ ...dog, breed: e.target.value })} 
+                      placeholder="e.g. Golden Retriever"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-amber-400" 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">COLOR</label>
+                    <input 
+                      type="text" 
+                      value={dog.color} 
+                      onChange={(e) => setDog({ ...dog, color: e.target.value })} 
+                      placeholder="e.g. Golden / Cream"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-amber-400" 
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1">OWNER NAME *</label>
+                  <input 
+                    type="text" 
+                    value={dog.ownerName} 
+                    onChange={(e) => setDog({ ...dog, ownerName: e.target.value })} 
+                    placeholder="e.g. Alex Smith"
+                    required 
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-amber-400" 
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1">OWNER PHONE (FOR EMERGENCY CALLS) *</label>
+                  <input 
+                    type="tel" 
+                    value={dog.ownerPhone} 
+                    onChange={(e) => setDog({ ...dog, ownerPhone: e.target.value })} 
+                    placeholder="+1 (555) 000-0000"
+                    required 
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-amber-300 font-mono focus:outline-none focus:border-amber-400" 
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1">MEDICAL / HANDLING NOTES</label>
+                  <textarea 
+                    value={dog.medical} 
+                    onChange={(e) => setDog({ ...dog, medical: e.target.value })} 
+                    placeholder="Allergies, behavior quirks, microchip ID..."
+                    rows="2" 
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-amber-400" 
+                  />
+                </div>
+                <button 
+                  type="submit" 
+                  className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3 rounded-lg text-sm transition mt-4 shadow-lg"
+                >
+                  Activate Tag & Save Profile
+                </button>
+              </form>
+            </div>
+          </div>
+        );
+      }
+
+      // -------------------------------------------------------------
+      // VIEW B: ACTIVE PROFILE & EMERGENCY SCAN VIEW
+      // -------------------------------------------------------------
+      return (
+        <div className="min-h-screen flex flex-col items-center py-8 px-4">
+          <canvas ref={canvasRef} className="hidden" />
+
+          <div className="w-full max-w-md bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden shadow-2xl">
+            
+            {/* Missing Alert Banner */}
+            {isMissing && (
+              <div className="bg-red-600 px-4 py-3 text-center text-white font-bold tracking-wider text-sm animate-pulse flex items-center justify-center gap-2">
+                <span>⚠️ THIS DOG IS CURRENTLY REPORTED MISSING</span>
+              </div>
+            )}
+
+            {/* Profile Photo */}
+            <div className="relative h-64 w-full bg-slate-950">
+              <img src={dog.photo} alt={dog.name} className="w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent" />
+              <div className="absolute bottom-3 left-4 right-4 flex justify-between items-end">
+                <div>
+                  <h1 className="text-2xl font-black text-white">{dog.name}</h1>
+                  <p className="text-xs text-amber-300 font-semibold">{dog.breed} {dog.color && `• ${dog.color}`}</p>
+                </div>
+                <span className="text-[10px] font-mono bg-slate-900/80 px-2 py-1 rounded text-slate-300 border border-slate-700">
+                  Tag: {tagId}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {/* Emergency Call Link */}
+              <a
+                href={`tel:${dog.ownerPhone}`}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg transition"
+              >
+                📞 Call Owner ({dog.ownerPhone})
+              </a>
+
+              {/* Medical / Contact Info */}
+              <div className="bg-slate-900/70 p-3.5 rounded-xl border border-slate-700/60 space-y-1.5">
+                <span className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+                  Guardian & Medical Notes
+                </span>
+                <p className="text-xs text-slate-300"><strong>Owner:</strong> {dog.ownerName}</p>
+                {dog.medical && (
+                  <p className="text-xs text-slate-300 leading-relaxed pt-1 border-t border-slate-800 mt-1">
+                    {dog.medical}
+                  </p>
+                )}
+              </div>
+
+              {/* Edit Mode Modal / Collapsible */}
+              {isEditing && (
+                <form onSubmit={handleProfileUpdate} className="bg-slate-900 p-4 rounded-xl border border-slate-700 space-y-3">
+                  <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider">Update Details</h3>
+                  <div>
+                    <label className="block text-[11px] text-slate-400 mb-1">New Photo</label>
+                    <input type="file" accept="image/*" onChange={handlePhoto} className="text-xs text-slate-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-slate-700 file:text-white" />
+                  </div>
+                  <input type="text" value={dog.name} onChange={(e) => setDog({ ...dog, name: e.target.value })} placeholder="Dog Name" className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-xs text-white" />
+                  <input type="text" value={dog.breed} onChange={(e) => setDog({ ...dog, breed: e.target.value })} placeholder="Breed" className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-xs text-white" />
+                  <input type="tel" value={dog.ownerPhone} onChange={(e) => setDog({ ...dog, ownerPhone: e.target.value })} placeholder="Owner Phone" className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-xs text-white font-mono" />
+                  <textarea value={dog.medical} onChange={(e) => setDog({ ...dog, medical: e.target.value })} placeholder="Medical Notes" rows="2" className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-xs text-white" />
+                  <div className="flex gap-2 pt-1">
+                    <button type="submit" className="flex-1 bg-amber-500 text-slate-950 font-bold py-1.5 rounded text-xs">Save Changes</button>
+                    <button type="button" onClick={() => setIsEditing(false)} className="px-3 bg-slate-700 text-white rounded text-xs">Cancel</button>
+                  </div>
+                </form>
+              )}
+
+              {/* Action Buttons */}
+              <div className="border-t border-slate-700 pt-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-300">Lost Dog Status</span>
+                  <button
+                    onClick={toggleMissing}
+                    className={`text-xs px-3 py-1.5 rounded-full font-bold transition ${
+                      isMissing ? 'bg-red-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                    }`}
+                  >
+                    {isMissing ? 'Missing Active' : 'Mark as Missing'}
+                  </button>
+                </div>
+
+                <button
+                  onClick={generatePoster}
+                  className="w-full bg-slate-700 hover:bg-slate-600 text-slate-100 font-semibold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 text-xs transition border border-slate-600"
+                >
+                  📥 Download Printable Lost Poster (PNG)
+                </button>
+
+                <div className="flex gap-2 pt-2 border-t border-slate-700/50">
+                  <button
+                    onClick={() => setIsEditing(!isEditing)}
+                    className="flex-1 text-[11px] text-slate-400 hover:text-slate-200 py-1"
+                  >
+                    ✏️ Edit Profile Details
+                  </button>
+                  <button
+                    onClick={handleResetTag}
+                    className="text-[11px] text-red-400 hover:text-red-300 py-1"
+                  >
+                    Reset Tag Data
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
