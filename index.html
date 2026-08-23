@@ -1,9 +1,8 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Canine Smart Tag & Official Medical Passport</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -20,7 +19,6 @@
     const { useState, useRef, useEffect } = React;
 
     function App() {
-      // 1. DYNAMIC UNIQUE TAG RESOLUTION (Every chip gets its own profile)
       const urlParams = new URLSearchParams(window.location.search);
       const tagId = urlParams.get('tag') || "TAG-DEMO-" + Math.floor(1000 + Math.random() * 9000);
       const storageKey = `dog_passport_v2_${tagId}`;
@@ -52,7 +50,6 @@
         photo: 'https://images.unsplash.com/photo-1552053831-71594a27632d?auto=format&fit=crop&w=800&q=80'
       };
 
-      // 2. INITIALIZE FROM LOCALSTORAGE
       const [isRegistered, setIsRegistered] = useState(() => {
         try {
           const saved = localStorage.getItem(storageKey);
@@ -81,79 +78,102 @@
       });
 
       const [activeTab, setActiveTab] = useState('summary');
-      const [isEditing, setIsEditing] = useState(false);
+      const [isCompressing, setIsCompressing] = useState(false);
       const canvasRef = useRef(null);
+      const fileInputRef = useRef(null);
 
-      // 3. PERSIST STATE
       const saveState = (updatedDog, updatedRegistered, updatedMissing) => {
         const payload = {
           dog: updatedDog,
           isRegistered: updatedRegistered,
           isMissing: updatedMissing
         };
-        localStorage.setItem(storageKey, JSON.stringify(payload));
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(payload));
+        } catch (err) {
+          console.warn("Storage quota exceeded", err);
+        }
       };
 
-      // Handle Image Conversion to Base64
-      const handlePhoto = (e) => {
-        const file = e.target.files[0];
-        if (file) {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const updated = { ...dog, photo: reader.result };
+      // Mobile-Safe Image Compression & Base64 Converter
+      const handleMobilePhoto = (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+
+        setIsCompressing(true);
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const img = new Image();
+          img.onload = () => {
+            // Resize image to max 700px width/height for phone storage optimization
+            const maxDim = 700;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+              if (width > maxDim) {
+                height = Math.round((height * maxDim) / width);
+                width = maxDim;
+              }
+            } else {
+              if (height > maxDim) {
+                width = Math.round((width * maxDim) / height);
+                height = maxDim;
+              }
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // Compress to JPEG at 0.75 quality (~60kb)
+            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.75);
+
+            const updated = { ...dog, photo: compressedBase64 };
             setDog(updated);
             if (isRegistered) {
               saveState(updated, true, isMissing);
             }
+            setIsCompressing(false);
           };
-          reader.readAsDataURL(file);
-        }
+          img.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
       };
 
-      // First-time Form Activation
       const handleRegister = (e) => {
         e.preventDefault();
         setIsRegistered(true);
         saveState(dog, true, isMissing);
       };
 
-      // Toggle Missing Alert
       const toggleMissing = () => {
         const nextMissingState = !isMissing;
         setIsMissing(nextMissingState);
         saveState(dog, isRegistered, nextMissingState);
       };
 
-      // Save Edited Profile
-      const handleProfileUpdate = (e) => {
-        e.preventDefault();
-        setIsEditing(false);
-        saveState(dog, true, isMissing);
-      };
-
-      // Factory Reset for this specific tag
       const handleResetTag = () => {
         if (confirm(`Reset and clear all saved profile data for Tag ID: ${tagId}?`)) {
           localStorage.removeItem(storageKey);
           setDog(defaultDog);
           setIsRegistered(false);
           setIsMissing(false);
-          setIsEditing(false);
         }
       };
 
-      // 4. PRINTABLE HIGH-RESOLUTION POSTER ENGINE
       const generatePoster = () => {
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
         canvas.width = 1200;
         canvas.height = 1600;
 
-        // Background
         ctx.fillStyle = '#FFFFFF';
         ctx.fillRect(0, 0, 1200, 1600);
 
-        // Emergency Header
         ctx.fillStyle = '#DC2626';
         ctx.fillRect(0, 0, 1200, 240);
 
@@ -165,24 +185,20 @@
         ctx.font = 'bold 36px sans-serif';
         ctx.fillText(`REWARD: ${dog.reward || '$250'} • PLEASE HELP`, 600, 190);
 
-        // Load & Draw Photo
         const img = new Image();
         img.crossOrigin = 'anonymous';
         img.src = dog.photo;
         img.onload = () => {
           ctx.drawImage(img, 120, 280, 960, 580);
 
-          // Dog Name
           ctx.fillStyle = '#0F172A';
           ctx.font = '900 68px sans-serif';
           ctx.fillText((dog.name || 'DOG').toUpperCase(), 600, 930);
 
-          // Breed & Markings
           ctx.font = 'bold 32px sans-serif';
           ctx.fillStyle = '#475569';
           ctx.fillText(`${dog.breed || 'Dog'} • ${dog.color || 'Markings'} • ${dog.gender}`, 600, 980);
 
-          // Last Seen Box
           ctx.fillStyle = '#FEF2F2';
           ctx.fillRect(120, 1010, 960, 80);
           ctx.strokeStyle = '#FCA5A5';
@@ -192,7 +208,6 @@
           ctx.font = 'bold 28px sans-serif';
           ctx.fillText(`LAST SEEN: ${dog.lastSeen}`, 600, 1060);
 
-          // Vital Notes
           ctx.fillStyle = '#334155';
           ctx.font = '24px sans-serif';
           ctx.fillText(`Microchip: ${dog.microchip || 'Registered'} | Rabies Tag: ${dog.rabiesTag || 'Active'}`, 600, 1140);
@@ -203,7 +218,6 @@
             ctx.fillText(`MEDICAL: ${dog.medicalNotes}`, 600, 1180);
           }
 
-          // Urgent Call Footer
           ctx.fillStyle = '#0F172A';
           ctx.fillRect(80, 1230, 1040, 310);
 
@@ -232,13 +246,11 @@
         };
       };
 
-      // -------------------------------------------------------------
-      // VIEW A: FIRST-TIME REGISTRATION & SETUP FORM
-      // -------------------------------------------------------------
+      // VIEW A: ONBOARDING SETUP
       if (!isRegistered) {
         return (
-          <div className="min-h-screen flex items-center justify-center p-4 py-12">
-            <div className="max-w-xl w-full bg-slate-900 p-6 md:p-8 rounded-3xl border border-slate-800 shadow-2xl space-y-6">
+          <div className="min-h-screen flex items-center justify-center p-4 py-8">
+            <div className="max-w-xl w-full bg-slate-900 p-5 md:p-8 rounded-3xl border border-slate-800 shadow-2xl space-y-6">
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-mono bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2.5 py-0.5 rounded-full uppercase tracking-wider font-semibold">
@@ -248,21 +260,40 @@
                 </div>
                 <h1 className="text-2xl font-bold text-white mt-2">Initialize Canine Smart Passport</h1>
                 <p className="text-xs text-slate-400">
-                  Fill in your dog’s complete medical and identity record. This data will be written specifically to this tag.
+                  Fill in your dog’s complete medical and identity record.
                 </p>
               </div>
 
               <form onSubmit={handleRegister} className="space-y-6">
                 
-                {/* Photo Upload */}
-                <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800/80">
-                  <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Pet Portrait</label>
+                {/* Mobile-Friendly File Upload Button */}
+                <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center">
+                  <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
+                    Pet Portrait
+                  </label>
+                  
                   <input 
                     type="file" 
-                    accept="image/*" 
-                    onChange={handlePhoto} 
-                    className="text-xs text-slate-400 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-amber-500 file:text-slate-950 hover:file:bg-amber-400 cursor-pointer" 
+                    id="dog-photo-input"
+                    ref={fileInputRef}
+                    accept="image/*,image/jpeg,image/png,image/heic,image/webp" 
+                    onChange={handleMobilePhoto} 
+                    className="hidden"
                   />
+
+                  <label 
+                    htmlFor="dog-photo-input"
+                    className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs cursor-pointer shadow-md transition active:scale-95"
+                  >
+                    📷 {isCompressing ? 'Optimizing Image...' : 'Choose from Photo Gallery'}
+                  </label>
+
+                  {dog.photo && (
+                    <div className="mt-3 flex items-center justify-center gap-3">
+                      <img src={dog.photo} alt="Preview" className="w-12 h-12 rounded-full object-cover border-2 border-amber-400" />
+                      <span className="text-[11px] text-emerald-400 font-semibold">Photo Loaded Successfully</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Section 1: Basic Identity */}
@@ -279,7 +310,7 @@
                     </div>
                     <div>
                       <label className="block text-[11px] text-slate-400 mb-1">COLOR & DISTINCT MARKINGS</label>
-                      <input type="text" value={dog.color} onChange={(e) => setDog({ ...dog, color: e.target.value })} placeholder="e.g. Golden / White patch on chest" className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:border-amber-400 focus:outline-none" />
+                      <input type="text" value={dog.color} onChange={(e) => setDog({ ...dog, color: e.target.value })} placeholder="e.g. Golden / White chest" className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:border-amber-400 focus:outline-none" />
                     </div>
                     <div>
                       <label className="block text-[11px] text-slate-400 mb-1">SEX / REPRODUCTIVE</label>
@@ -292,101 +323,56 @@
                     </div>
                     <div>
                       <label className="block text-[11px] text-slate-400 mb-1">DATE OF BIRTH / AGE</label>
-                      <input type="text" value={dog.dob} onChange={(e) => setDog({ ...dog, dob: e.target.value })} placeholder="e.g. 2022-04-15 (3 Yrs)" className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:border-amber-400 focus:outline-none" />
+                      <input type="text" value={dog.dob} onChange={(e) => setDog({ ...dog, dob: e.target.value })} placeholder="e.g. 2022-04-15" className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:border-amber-400 focus:outline-none" />
                     </div>
                     <div>
                       <label className="block text-[11px] text-slate-400 mb-1">WEIGHT</label>
-                      <input type="text" value={dog.weight} onChange={(e) => setDog({ ...dog, weight: e.target.value })} placeholder="e.g. 68 lbs / 31 kg" className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:border-amber-400 focus:outline-none" />
+                      <input type="text" value={dog.weight} onChange={(e) => setDog({ ...dog, weight: e.target.value })} placeholder="e.g. 68 lbs" className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:border-amber-400 focus:outline-none" />
                     </div>
                   </div>
                 </div>
 
-                {/* Section 2: Microchip & Vaccines */}
+                {/* Section 2: Microchip & Rabies */}
                 <div className="space-y-3 pt-2">
-                  <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider">2. Microchip & Rabies Information</h3>
+                  <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider">2. Microchip & Rabies</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-[11px] text-slate-400 mb-1">15-DIGIT ISO MICROCHIP ID</label>
+                      <label className="block text-[11px] text-slate-400 mb-1">15-DIGIT MICROCHIP ID</label>
                       <input type="text" value={dog.microchip} onChange={(e) => setDog({ ...dog, microchip: e.target.value })} placeholder="985141000842109" className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm font-mono text-amber-300 focus:border-amber-400 focus:outline-none" />
                     </div>
                     <div>
-                      <label className="block text-[11px] text-slate-400 mb-1">MICROCHIP REGISTRY / DATABASE</label>
-                      <input type="text" value={dog.microchipRegistry} onChange={(e) => setDog({ ...dog, microchipRegistry: e.target.value })} placeholder="e.g. AKC Reunite / HomeAgain" className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:border-amber-400 focus:outline-none" />
+                      <label className="block text-[11px] text-slate-400 mb-1">MICROCHIP REGISTRY</label>
+                      <input type="text" value={dog.microchipRegistry} onChange={(e) => setDog({ ...dog, microchipRegistry: e.target.value })} placeholder="AKC Reunite / HomeAgain" className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:border-amber-400 focus:outline-none" />
                     </div>
                     <div>
                       <label className="block text-[11px] text-slate-400 mb-1">RABIES TAG NUMBER</label>
-                      <input type="text" value={dog.rabiesTag} onChange={(e) => setDog({ ...dog, rabiesTag: e.target.value })} placeholder="e.g. RB-2025-9812" className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:border-amber-400 focus:outline-none" />
+                      <input type="text" value={dog.rabiesTag} onChange={(e) => setDog({ ...dog, rabiesTag: e.target.value })} placeholder="RB-2025-9812" className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:border-amber-400 focus:outline-none" />
                     </div>
                     <div>
-                      <label className="block text-[11px] text-slate-400 mb-1">RABIES EXPIRATION DATE</label>
-                      <input type="text" value={dog.rabiesExpiry} onChange={(e) => setDog({ ...dog, rabiesExpiry: e.target.value })} placeholder="e.g. May 2028" className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:border-amber-400 focus:outline-none" />
-                    </div>
-                    <div className="md:col-span-2">
-                      <label className="block text-[11px] text-slate-400 mb-1">CORE VACCINE STATUS</label>
-                      <input type="text" value={dog.coreVaccines} onChange={(e) => setDog({ ...dog, coreVaccines: e.target.value })} placeholder="DHPP, Leptospirosis, Bordetella (Up to date)" className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:border-amber-400 focus:outline-none" />
+                      <label className="block text-[11px] text-slate-400 mb-1">RABIES EXPIRY</label>
+                      <input type="text" value={dog.rabiesExpiry} onChange={(e) => setDog({ ...dog, rabiesExpiry: e.target.value })} placeholder="May 2028" className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:border-amber-400 focus:outline-none" />
                     </div>
                   </div>
                 </div>
 
-                {/* Section 3: Health & Behavior */}
+                {/* Section 3: Owner Contacts */}
                 <div className="space-y-3 pt-2">
-                  <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider">3. Critical Medical & Behavior Handling</h3>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-[11px] text-slate-400 mb-1">DIETARY ALLERGIES / RESTRICTIONS</label>
-                      <input type="text" value={dog.dietAllergies} onChange={(e) => setDog({ ...dog, dietAllergies: e.target.value })} placeholder="e.g. Severe Chicken Allergy, Grain-free only" className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:border-amber-400 focus:outline-none" />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] text-slate-400 mb-1">CHRONIC CONDITIONS & MEDICATIONS</label>
-                      <textarea value={dog.medicalNotes} onChange={(e) => setDog({ ...dog, medicalNotes: e.target.value })} placeholder="e.g. Requires daily Apoquel for skin. Mild hip dysplasia." rows="2" className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:border-amber-400 focus:outline-none" />
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[11px] text-slate-400 mb-1">TEMPERAMENT</label>
-                        <input type="text" value={dog.temperament} onChange={(e) => setDog({ ...dog, temperament: e.target.value })} placeholder="e.g. Submissive, Loves people, Food motivated" className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:border-amber-400 focus:outline-none" />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] text-slate-400 mb-1">BEHAVIORAL / FLIGHT TRIGGERS</label>
-                        <input type="text" value={dog.behaviorAlerts} onChange={(e) => setDog({ ...dog, behaviorAlerts: e.target.value })} placeholder="e.g. Terrified of thunderstorms, Do not grab collar" className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:border-amber-400 focus:outline-none" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Section 4: Emergency Contacts & Vet */}
-                <div className="space-y-3 pt-2">
-                  <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider">4. Guardians & Veterinary Emergency</h3>
+                  <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider">3. Guardians & Vet</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-[11px] text-slate-400 mb-1">PRIMARY OWNER NAME *</label>
+                      <label className="block text-[11px] text-slate-400 mb-1">OWNER NAME *</label>
                       <input type="text" value={dog.ownerName} onChange={(e) => setDog({ ...dog, ownerName: e.target.value })} placeholder="Alex Smith" required className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:border-amber-400 focus:outline-none" />
                     </div>
                     <div>
-                      <label className="block text-[11px] text-slate-400 mb-1">PRIMARY OWNER PHONE *</label>
+                      <label className="block text-[11px] text-slate-400 mb-1">PRIMARY PHONE *</label>
                       <input type="tel" value={dog.ownerPhone} onChange={(e) => setDog({ ...dog, ownerPhone: e.target.value })} placeholder="+1 (555) 019-2834" required className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm font-mono text-emerald-400 focus:border-amber-400 focus:outline-none" />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] text-slate-400 mb-1">BACKUP EMERGENCY CONTACT</label>
-                      <input type="text" value={dog.backupContactName} onChange={(e) => setDog({ ...dog, backupContactName: e.target.value })} placeholder="Jordan (Co-owner / Sitter)" className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:border-amber-400 focus:outline-none" />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] text-slate-400 mb-1">BACKUP PHONE</label>
-                      <input type="tel" value={dog.backupContactPhone} onChange={(e) => setDog({ ...dog, backupContactPhone: e.target.value })} placeholder="+1 (555) 019-8822" className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm font-mono text-white focus:border-amber-400 focus:outline-none" />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] text-slate-400 mb-1">PRIMARY VET CLINIC</label>
-                      <input type="text" value={dog.vetClinic} onChange={(e) => setDog({ ...dog, vetClinic: e.target.value })} placeholder="City Animal Hospital" className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-white focus:border-amber-400 focus:outline-none" />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] text-slate-400 mb-1">VET / EMERGENCY CLINIC PHONE</label>
-                      <input type="tel" value={dog.vetPhone} onChange={(e) => setDog({ ...dog, vetPhone: e.target.value })} placeholder="+1 (555) 991-0022" className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm font-mono text-white focus:border-amber-400 focus:outline-none" />
                     </div>
                   </div>
                 </div>
 
                 <button 
                   type="submit" 
-                  className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3.5 rounded-xl text-sm transition shadow-xl mt-4"
+                  className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3.5 rounded-xl text-sm transition shadow-xl mt-4 active:scale-95"
                 >
                   Activate Passport & Lock to Tag #{tagId}
                 </button>
@@ -396,23 +382,19 @@
         );
       }
 
-      // -------------------------------------------------------------
-      // VIEW B: ACTIVE SMART PASSPORT PROFILE
-      // -------------------------------------------------------------
+      // VIEW B: ACTIVE PROFILE
       return (
         <div className="min-h-screen flex flex-col items-center py-6 px-4">
           <canvas ref={canvasRef} className="hidden" />
 
           <div className="w-full max-w-lg bg-slate-900 rounded-3xl border border-slate-800 overflow-hidden shadow-2xl">
             
-            {/* Missing Status Alert Banner */}
             {isMissing && (
               <div className="bg-red-600 px-4 py-3 text-center text-white font-extrabold tracking-wider text-xs md:text-sm animate-pulse flex items-center justify-center gap-2">
                 <span>🚨 URGENT: THIS DOG IS CURRENTLY REPORTED MISSING 🚨</span>
               </div>
             )}
 
-            {/* Pet Passport Card Header */}
             <div className="relative h-72 w-full bg-slate-950">
               <img src={dog.photo} alt={dog.name} className="w-full h-full object-cover" />
               <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/30 to-transparent" />
@@ -429,12 +411,11 @@
                   <p className="text-xs text-amber-300 font-semibold">{dog.breed} • {dog.gender}</p>
                 </div>
                 <span className="text-xs font-mono bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 px-2 py-1 rounded-lg">
-                  Passport Active
+                  Active
                 </span>
               </div>
             </div>
 
-            {/* Quick Action Dial Buttons */}
             <div className="p-4 grid grid-cols-2 gap-2 bg-slate-900/90 border-b border-slate-800">
               <a
                 href={`tel:${dog.ownerPhone}`}
@@ -459,7 +440,6 @@
               )}
             </div>
 
-            {/* Passport Navigation Tabs */}
             <div className="flex border-b border-slate-800 text-xs font-semibold bg-slate-950/40">
               <button 
                 onClick={() => setActiveTab('summary')}
@@ -481,12 +461,11 @@
               </button>
             </div>
 
-            {/* TAB CONTENT 1: VITALS & ID */}
             {activeTab === 'summary' && (
               <div className="p-5 space-y-4">
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-800">
-                    <span className="text-[10px] text-slate-500 font-bold uppercase">Color & Coat</span>
+                    <span className="text-[10px] text-slate-500 font-bold uppercase">Color</span>
                     <p className="font-semibold text-slate-200 mt-0.5">{dog.color || 'Standard'}</p>
                   </div>
                   <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-800">
@@ -502,65 +481,45 @@
                 </div>
 
                 <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 space-y-1">
-                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Owner Contact</span>
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Guardian Contact</span>
                   <p className="text-xs font-semibold text-slate-200">{dog.ownerName}</p>
                   <p className="text-xs font-mono text-emerald-400">{dog.ownerPhone}</p>
                 </div>
               </div>
             )}
 
-            {/* TAB CONTENT 2: MEDICAL & RABIES */}
             {activeTab === 'medical' && (
               <div className="p-5 space-y-3">
                 <div className="bg-emerald-950/20 border border-emerald-500/30 p-3.5 rounded-xl space-y-1">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Rabies Certification</span>
-                    <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-mono">Valid</span>
-                  </div>
+                  <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Rabies Certification</span>
                   <p className="text-xs text-slate-200"><strong>Tag #:</strong> {dog.rabiesTag || 'RB-ON-FILE'}</p>
                   <p className="text-xs text-slate-200"><strong>Expires:</strong> {dog.rabiesExpiry || 'Verified'}</p>
-                  <p className="text-[11px] text-slate-400 pt-1">Core: {dog.coreVaccines}</p>
                 </div>
-
                 <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800 space-y-1">
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Allergies & Dietary</span>
-                  <p className="text-xs text-slate-200 leading-relaxed">{dog.dietAllergies || 'No known dietary allergies.'}</p>
-                </div>
-
-                <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800 space-y-1">
-                  <span className="text-[10px] text-rose-400 font-bold uppercase tracking-wider">Medical Notes & Conditions</span>
-                  <p className="text-xs text-slate-200 leading-relaxed">{dog.medicalNotes || 'No chronic medical issues reported.'}</p>
+                  <span className="text-[10px] text-rose-400 font-bold uppercase tracking-wider">Medical Notes</span>
+                  <p className="text-xs text-slate-200 leading-relaxed">{dog.medicalNotes || 'No chronic issues.'}</p>
                 </div>
               </div>
             )}
 
-            {/* TAB CONTENT 3: BEHAVIOR & VET */}
             {activeTab === 'behavior' && (
               <div className="p-5 space-y-3">
                 <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800 space-y-1">
                   <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Temperament</span>
                   <p className="text-xs text-slate-200 leading-relaxed">{dog.temperament}</p>
                 </div>
-
                 <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800 space-y-1">
-                  <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">Handling & Behavioral Cues</span>
+                  <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">Triggers & Alerts</span>
                   <p className="text-xs text-slate-200 leading-relaxed">{dog.behaviorAlerts}</p>
-                </div>
-
-                <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800 space-y-1">
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Primary Vet Clinic</span>
-                  <p className="text-xs font-semibold text-slate-200">{dog.vetClinic || 'Not Specified'}</p>
-                  {dog.vetPhone && <p className="text-xs font-mono text-slate-400">Tel: {dog.vetPhone}</p>}
                 </div>
               </div>
             )}
 
-            {/* Owner Control Dashboard */}
             <div className="p-5 bg-slate-950 border-t border-slate-800 space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="text-xs font-bold text-slate-200">Lost Dog Alert System</span>
-                  <p className="text-[10px] text-slate-500">Flags profile as missing on live scans</p>
+                  <span className="text-xs font-bold text-slate-200">Lost Dog Alert</span>
+                  <p className="text-[10px] text-slate-500">Flags profile on live scans</p>
                 </div>
                 <button
                   onClick={toggleMissing}
@@ -576,20 +535,14 @@
                 onClick={generatePoster}
                 className="w-full bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 text-xs transition border border-slate-700"
               >
-                📥 Download High-Res Lost Poster (PNG)
+                📥 Download Lost Poster (PNG)
               </button>
 
               <div className="flex justify-between items-center pt-2 text-[11px] text-slate-500 border-t border-slate-800/80">
-                <button
-                  onClick={() => setIsRegistered(false)}
-                  className="hover:text-amber-400 transition"
-                >
-                  ✏️ Edit Passport Data
+                <button onClick={() => setIsRegistered(false)} className="hover:text-amber-400 transition">
+                  ✏️ Edit Data
                 </button>
-                <button
-                  onClick={handleResetTag}
-                  className="hover:text-rose-400 transition"
-                >
+                <button onClick={handleResetTag} className="hover:text-rose-400 transition">
                   Reset Chip Memory
                 </button>
               </div>
